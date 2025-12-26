@@ -2,16 +2,43 @@
 
 [global]
 DEBUG = True
-LOGFILE = /var/log/mqtt-aprs.log
-MQTT_HOST = mqtt.example.com
-MQTT_PORT = 1883
-MQTT_TOPIC = owntracks/yourname/galaxys2
-MQTT_USER = yourname
-MQTT_PASS = secret
-APRS_SERVER = rotate.aprs2.net
-APRS_PORT = 14580
-APRS_CALLSIGN = YOURCALLSIGN
-APRS_SSID = STATION_SSID
-APRS_PASS = YOURAPRS-ISPASS
-APRS_SYMB = [
-APRS_TABL = /
+# Logging to file is supported. If not specified, logs to stdout.
+# LOGFILE = /var/log/mqtt-aprs.log
+
+[mqtt]
+HOST = mqtt.example.com
+PORT = 1883
+USER = yourname
+PASS = secret
+
+[mqtt_outgoing]
+# Enable sending Owntracks location updates TO APRS
+ENABLED = True
+# Topic to listen for Owntracks location updates to send TO APRS
+TOPIC = owntracks/yourname/galaxys2
+
+[aprs]
+# APRS-IS Server Connection
+SERVER = rotate.aprs2.net
+PORT = 14580
+CALLSIGN = YOURCALLSIGN
+SSID = STATION_SSID
+# APRS-IS Passcode (Required for sending)
+PASS = YOURAPRS-ISPASS
+
+# APRS Packet Settings
+SYMBOL = [
+TABLE = /
+
+[aprs_incoming]
+# Enable bridging incoming APRS packets to MQTT
+ENABLED = True
+# APRS-IS Filter. CRITICAL: Set this to a specific range or list of callsigns
+# to avoid flooding your MQTT broker with global traffic.
+# Examples:
+#   r/50.5/19.5/50  (50km radius around lat 50.5, lon 19.5)
+#   p/CALLSIGN      (Only packets from CALLSIGN)
+FILTER = r/52.2/21.0/50
+# MQTT Topic prefix for incoming APRS packets
+# Packets will be published to: <TOPIC_PREFIX>/<CALLSIGN>
+TOPIC_PREFIX = owntracks/aprs

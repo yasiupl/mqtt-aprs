@@ -1,0 +1,7 @@
+services:
+  mqtt-aprs:
+    build: .
+    volumes:
+      - ./mqtt-aprs.cfg:/app/mqtt-aprs.cfg
+    restart: unless-stopped
+    # network_mode: host # Optional: if connecting to localhost MQTT
