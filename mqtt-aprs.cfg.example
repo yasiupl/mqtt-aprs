@@ -1,5 +1,3 @@
-# See http://aprs.org/aprs11/SSIDs.txt for SSID information
-
 [global]
 DEBUG = True
 # Logging to file is supported. If not specified, logs to stdout.
@@ -21,12 +19,13 @@ TOPIC = owntracks/yourname/galaxys2
 # APRS-IS Server Connection
 SERVER = rotate.aprs2.net
 PORT = 14580
-CALLSIGN = YOURCALLSIGN
-SSID = STATION_SSID
+CALLSIGN = N0CALL
+# See http://aprs.org/aprs11/SSIDs.txt for SSID informationn
+SSID = 10
 # APRS-IS Passcode (Required for sending)
 PASS = YOURAPRS-ISPASS
 
-# APRS Packet Settings
+# APRS Packet Settings. See reference: https://www.aprs.org/symbols.html
 SYMBOL = [
 TABLE = /
 
