@@ -26,7 +26,7 @@ This daemon allows you to:
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/kylegordon/mqtt-aprs.git
+    git clone https://github.com/yasiupl/mqtt-aprs.git
     cd mqtt-aprs
     ```
 
