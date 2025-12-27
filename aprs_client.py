@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import logging
-import socket
 import time
 import json
 import threading
@@ -10,8 +9,19 @@ class APRSClient:
     def __init__(self, config, mqtt_publisher_callback):
         self.config = config
         self.mqtt_publish = mqtt_publisher_callback
-        self.aprs_is = None
         self._stop_event = threading.Event()
+        
+        # Initialize global aprslib instance
+        password = self.config['APRS_PASS']
+        if not password:
+            password = "-1"
+            
+        self.aprs_is = aprslib.IS(
+            self.config['APRS_CALLSIGN'], 
+            passwd=password, 
+            host=self.config['APRS_SERVER'], 
+            port=self.config['APRS_PORT']
+        )
 
     def start_listener(self):
         """
@@ -31,13 +41,7 @@ class APRSClient:
     def _listener_loop(self):
         while not self._stop_event.is_set():
             try:
-                callsign = self.config['APRS_CALLSIGN']
-                password = self.config['APRS_PASS']
-                if not password:
-                    password = "-1"
-                    
                 logging.info("Connecting to APRS-IS for incoming traffic...")
-                self.aprs_is = aprslib.IS(callsign, passwd=password, host=self.config['APRS_SERVER'], port=self.config['APRS_PORT'])
                 
                 if self.config['APRS_IN_FILTER']:
                     self.aprs_is.set_filter(self.config['APRS_IN_FILTER'])
@@ -97,25 +101,32 @@ class APRSClient:
 
     def send_packet(self, packet):
         """
-        Create a socket, log on to the APRS server, and send the packet
+        Send packet using the global aprslib instance
         """
-        logging.debug(f"{self.config['APRS_SERVER']}:{self.config['APRS_PORT']}")
+        logging.debug(f"Sending packet via aprslib: {packet.strip()}")
         try:
-            connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            connection.connect((self.config['APRS_SERVER'], self.config['APRS_PORT']))
-
-            # Log on to APRS server
-            auth = f'user {self.config["APRS_CALLSIGN"]} pass {self.config["APRS_PASS"]} vers "mqtt-zabbix" \n'
-            connection.send(auth.encode('utf-8'))
-
-            # Send APRS packet
-            logging.debug(f"Sending {packet}")
-            connection.send(packet.encode('utf-8'))
-            logging.debug(f"Sent packet at: {time.ctime()}")
-
-            # Close socket -- must be closed to avoidbuffer overflow
-            time.sleep(2)  # Short delay to ensure send
-            connection.shutdown(socket.SHUT_RDWR)
-            connection.close()
+            if self.config['APRS_IN_ENABLED']:
+                # Reuse existing connection from the listener
+                # Note: This relies on thread-safety of the underlying socket for send vs recv
+                try:
+                    self.aprs_is.sendall(packet)
+                    logging.debug(f"Sent packet via existing listener connection at: {time.ctime()}")
+                except Exception as e:
+                    logging.warning(f"Failed to send via listener connection: {e}")
+                    # We do not attempt to reconnect here as the listener loop handles lifecycle
+            else:
+                # Establish a temporary connection since listener is disabled
+                logging.debug("Connecting to APRS-IS (outbound only)...")
+                try:
+                    self.aprs_is.connect()
+                    self.aprs_is.sendall(packet)
+                    logging.debug(f"Sent packet via new connection at: {time.ctime()}")
+                finally:
+                    # Always close the temporary connection
+                    try:
+                        self.aprs_is.close()
+                    except Exception:
+                        pass
+                        
         except Exception as e:
             logging.error(f"Failed to send packet: {str(e)}")
