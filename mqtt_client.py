@@ -9,22 +9,22 @@ class MQTTClient:
     """
     A client for handling interactions with the MQTT Broker.
 
-    This class manages the MQTT connection, subscribes to Owntracks location topics,
-    and publishes received APRS packets to the broker. It also handles the conversion
-    of Owntracks JSON payloads to APRS packet format.
+    This class manages the MQTT connection, subscribes to configured topics,
+    and publishes received messages to the broker. It handles generic message passing
+    and does not perform protocol-specific conversions.
     """
 
-    def __init__(self, config, aprs_sender_callback):
+    def __init__(self, config, message_handler_callback):
         """
         Initialize the MQTTClient.
 
         Args:
             config (dict): Application configuration dictionary containing MQTT settings.
-            aprs_sender_callback (callable): Callback function to send APRS packets.
-                                             Signature: (packet_string)
+            message_handler_callback (callable): Callback function to handle received messages.
+                                             Signature: (message_payload)
         """
         self.config = config
-        self.aprs_send = aprs_sender_callback
+        self.message_callback = message_handler_callback
         
         self.appname = "mqtt-aprs" # Could be passed in
         self.presence_topic = f"clients/{socket.getfqdn()}/{self.appname}/state"
@@ -131,8 +131,8 @@ class MQTTClient:
         """
         Process an incoming MQTT message.
 
-        Parses Owntracks JSON, converts coordinates to APRS format,
-        constructs an APRS packet, and sends it via the callback.
+        Parses JSON and passes it to the callback.
+        The callback (main application) is responsible for processing logic.
 
         Args:
             msg (mqtt.MQTTMessage): The received message.
@@ -140,42 +140,9 @@ class MQTTClient:
         try:
             data = json.loads(msg.payload.decode('utf-8'))
             if data.get('_type') == 'location':
-                address = f"{self.config['APRS_CALLSIGN']}-{self.config['APRS_SSID']}>APRS,TCPIP*:"
-                lat = self._deg_to_dms(float(data['lat']), 0)
-                lon = self._deg_to_dms(float(data['lon']), 1)
-                position = f"={lat}{self.config['APRS_TABL']}{lon}{self.config['APRS_SYMB']}"
-
-                packet = f"{address}{position} {self.appname}\n"
-                logging.debug(f"Packet is {packet}")
-                self.aprs_send(packet)
+                logging.debug(f"Received Owntracks location: {data}")
+                self.message_callback(data)
             else:
                 logging.debug("Not a location message")
         except Exception as e:
             logging.error(f"Failed to process message: {str(e)}")
-
-    def _deg_to_dms(self, deg, long_flag):
-        """
-        Convert decimal degrees to APRS Degrees Minutes Seconds (DMS) format.
-
-        Args:
-            deg (float): Coordinate in decimal degrees.
-            long_flag (bool): True if longitude (3-digit degrees), False if latitude (2-digit degrees).
-
-        Returns:
-            str: Formatted DMS string (e.g., "5130.00N" or "00005.00W").
-        """
-        d = int(deg)
-        md = round(abs(deg - d) * 60, 2)
-        m = int(md)
-        hm = int((md - m) * 100)
-
-        if long_flag:
-            suffix = "E" if d > 0 else "W"
-            # APRS longitude is 3 digits for degrees
-            aprsdms = f"{str(d).strip('-').zfill(3)}{str(m).zfill(2)}.{str(hm).zfill(2)}{suffix}"
-        else:
-            suffix = "N" if d > 0 else "S"
-            # APRS latitude is 2 digits for degrees
-            aprsdms = f"{str(d).strip('-').zfill(2)}{str(m).zfill(2)}.{str(hm).zfill(2)}{suffix}"
-            
-        return aprsdms

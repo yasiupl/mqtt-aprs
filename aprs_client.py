@@ -10,21 +10,21 @@ class APRSClient:
     A client for handling interactions with the APRS-IS network.
     
     This class manages the connection to an APRS-IS server, listens for incoming
-    packets based on a filter, and sends outgoing packets. It also converts
-    received APRS packets into Owntracks-compatible JSON payloads for MQTT publishing.
+    packets based on a filter, and sends outgoing packets. It acts as a transparent
+    gateway for APRS traffic, passing received packets to a callback and sending
+    packets provided via a method.
     """
 
-    def __init__(self, config, mqtt_publisher_callback):
+    def __init__(self, config, packet_receiver_callback):
         """
         Initialize the APRSClient.
 
         Args:
             config (dict): Application configuration dictionary containing APRS settings.
-            mqtt_publisher_callback (callable): Callback function to publish messages to MQTT. 
-                                                Signature: (topic, payload)
+            packet_receiver_callback (callable): Callback function to handle received packets.
         """
         self.config = config
-        self.mqtt_publish = mqtt_publisher_callback
+        self.packet_callback = packet_receiver_callback
         self._stop_event = threading.Event()
         
         # Initialize global aprslib instance
@@ -83,8 +83,7 @@ class APRSClient:
         """
         Callback handler for received APRS packets.
 
-        Filters for location packets, converts them to Owntracks format,
-        and publishes them via the MQTT callback.
+        Passes the raw packet to the callback for processing.
 
         Args:
             packet (dict): Parsed APRS packet data.
@@ -93,50 +92,8 @@ class APRSClient:
         if 'latitude' in packet and 'longitude' in packet:
             logging.debug(f"Received APRS packet from {packet.get('from')}")
             
-            ot_data = self._aprs_to_owntracks(packet)
-            if ot_data:
-                # Topic: owntracks/aprs/CALLSIGN
-                sender = packet.get('from')
-                topic = f"{self.config['APRS_IN_TOPIC_PREFIX']}/{sender}"
-                
-                payload = json.dumps(ot_data)
-                self.mqtt_publish(topic, payload)
-                logging.debug(f"Published to {topic}: {payload}")
-
-    def _aprs_to_owntracks(self, packet):
-        """
-        Convert a parsed APRS packet to Owntracks JSON format.
-
-        Args:
-            packet (dict): Parsed APRS packet.
-
-        Returns:
-            dict: Owntracks-compatible dictionary, or None if conversion fails.
-        """
-        try:
-            # Basic Owntracks payload
-            ot_payload = {
-                "_type": "location",
-                "lat": packet.get('latitude'),
-                "lon": packet.get('longitude'),
-                "tst": int(packet.get('timestamp', time.time())),
-                "tid": packet.get('from', '')[:2] # Tracker ID (2 chars)
-            }
-
-            # Optional fields
-            if 'altitude' in packet:
-                ot_payload['alt'] = int(packet['altitude'])
-            
-            if 'speed' in packet:
-                ot_payload['vel'] = int(packet['speed'])
-                
-            if 'course' in packet:
-                ot_payload['cog'] = int(packet['course'])
-
-            return ot_payload
-        except Exception as e:
-            logging.error(f"Error converting APRS to Owntracks: {e}")
-            return None
+            # Pass raw packet to callback. Topic is handled by the callback (main app).
+            self.packet_callback(None, packet)
 
     def send_packet(self, packet):
         """

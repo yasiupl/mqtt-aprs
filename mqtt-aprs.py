@@ -14,6 +14,7 @@ import signal
 import logging
 import configparser
 import setproctitle
+import json
 
 from mqtt_client import MQTTClient
 from aprs_client import APRSClient
@@ -112,13 +113,101 @@ def main():
     # Wrapper for APRS Client to send packet (passed to MQTT Client)
     def send_aprs_packet(packet):
         if aprs_client:
-            aprs_client.send_packet(packet)
+            # Check if packet is a dictionary (Owntracks format) and convert to APRS string
+            if isinstance(packet, dict):
+                aprs_string = owntracks_to_aprs(packet)
+                if aprs_string:
+                    aprs_client.send_packet(aprs_string)
+            else:
+                # Assume it's already a raw APRS packet string
+                aprs_client.send_packet(packet)
             
     # Wrapper for MQTT Client to publish (passed to APRS Client)
     def mqtt_publish(topic, payload):
         if mqtt_client:
-            mqtt_client.publish(topic, payload)
+            # Check if payload is a dict (raw APRS packet data) and convert to Owntracks JSON
+            if isinstance(payload, dict):
+                ot_data = aprs_to_owntracks(payload)
+                if ot_data:
+                    # Construct topic based on sender
+                    sender = payload.get('from', 'UNKNOWN')
+                    topic = f"{CONFIG['APRS_IN_TOPIC_PREFIX']}/{sender}"
+                    
+                    json_payload = json.dumps(ot_data)
+                    mqtt_client.publish(topic, json_payload)
+            else:
+                # Assume it's already fully formed topic and payload
+                mqtt_client.publish(topic, payload)
 
+    def aprs_to_owntracks(packet):
+        """
+        Convert a parsed APRS packet to Owntracks JSON format.
+        """
+        try:
+            # Basic Owntracks payload
+            ot_payload = {
+                "_type": "location",
+                "lat": packet.get('latitude'),
+                "lon": packet.get('longitude'),
+                "tst": int(packet.get('timestamp', time.time())),
+                "tid": packet.get('from', '')[:2] # Tracker ID (2 chars)
+            }
+
+            # Optional fields
+            if 'altitude' in packet:
+                ot_payload['alt'] = int(packet['altitude'])
+            
+            if 'speed' in packet:
+                ot_payload['vel'] = int(packet['speed'])
+                
+            if 'course' in packet:
+                ot_payload['cog'] = int(packet['course'])
+
+            return ot_payload
+        except Exception as e:
+            logging.error(f"Error converting APRS to Owntracks: {e}")
+            return None
+
+    def owntracks_to_aprs(data):
+        """
+        Convert Owntracks JSON format to an APRS packet string.
+        """
+        try:
+            if data.get('_type') == 'location':
+                address = f"{CONFIG['APRS_CALLSIGN']}-{CONFIG['APRS_SSID']}>APRS,TCPIP*:"
+                lat = _deg_to_dms(float(data['lat']), 0)
+                lon = _deg_to_dms(float(data['lon']), 1)
+                position = f"={lat}{CONFIG['APRS_TABL']}{lon}{CONFIG['APRS_SYMB']}"
+
+                packet = f"{address}{position} mqtt-aprs\n"
+                return packet
+            else:
+                logging.debug("Not a location message")
+                return None
+        except Exception as e:
+            logging.error(f"Failed to convert Owntracks to APRS: {str(e)}")
+            return None
+
+    def _deg_to_dms(deg, long_flag):
+        """
+        Convert decimal degrees to APRS Degrees Minutes Seconds (DMS) format.
+        """
+        d = int(deg)
+        md = round(abs(deg - d) * 60, 2)
+        m = int(md)
+        hm = int((md - m) * 100)
+
+        if long_flag:
+            suffix = "E" if d > 0 else "W"
+            # APRS longitude is 3 digits for degrees
+            aprsdms = f"{str(d).strip('-').zfill(3)}{str(m).zfill(2)}.{str(hm).zfill(2)}{suffix}"
+        else:
+            suffix = "N" if d > 0 else "S"
+            # APRS latitude is 2 digits for degrees
+            aprsdms = f"{str(d).strip('-').zfill(2)}{str(m).zfill(2)}.{str(hm).zfill(2)}{suffix}"
+            
+        return aprsdms
+    
     # Initialize Clients
     global mqtt_client, aprs_client
     
