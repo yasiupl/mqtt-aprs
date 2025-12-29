@@ -86,6 +86,8 @@ def load_config(path="/etc/mqtt-aprs/mqtt-aprs.cfg"):
 def setup_logging():
     """
     Configure the logging system based on the loaded configuration.
+    
+    Sets up logging level, format, and optional file output.
     """
     log_format = "%(asctime)-15s %(message)s"
     level = logging.DEBUG if CONFIG.get("DEBUG") else logging.INFO
@@ -112,6 +114,16 @@ def main():
     
     # Wrapper for APRS Client to send packet (passed to MQTT Client)
     def send_aprs_packet(packet):
+        """
+        Callback for MQTT Client to send an APRS packet.
+
+        This function handles the conversion of Owntracks data to APRS
+        if necessary, or passes raw APRS strings directly.
+
+        Args:
+            packet (dict or str): The payload to send. Can be an Owntracks
+                                  dictionary or a raw APRS packet string.
+        """
         if aprs_client:
             # Check if packet is a dictionary (Owntracks format) and convert to APRS string
             if isinstance(packet, dict):
@@ -124,6 +136,18 @@ def main():
             
     # Wrapper for MQTT Client to publish (passed to APRS Client)
     def mqtt_publish(topic, payload):
+        """
+        Callback for APRS Client to publish to MQTT.
+
+        This function handles the conversion of APRS packet data to Owntracks JSON
+        if necessary, or passes raw topic/payload pairs directly.
+
+        Args:
+            topic (str or None): The MQTT topic. If payload is a dict (raw APRS),
+                                 this is ignored/calculated.
+            payload (dict or str): The payload to publish. Can be a raw APRS packet
+                                   dictionary or a ready-to-send string.
+        """
         if mqtt_client:
             # Check if payload is a dict (raw APRS packet data) and convert to Owntracks JSON
             if isinstance(payload, dict):
@@ -142,6 +166,12 @@ def main():
     def aprs_to_owntracks(packet):
         """
         Convert a parsed APRS packet to Owntracks JSON format.
+
+        Args:
+            packet (dict): Parsed APRS packet dictionary.
+
+        Returns:
+            dict: Owntracks JSON payload or None if conversion failed.
         """
         try:
             # Basic Owntracks payload
@@ -171,6 +201,12 @@ def main():
     def owntracks_to_aprs(data):
         """
         Convert Owntracks JSON format to an APRS packet string.
+
+        Args:
+            data (dict): Owntracks JSON payload.
+
+        Returns:
+            str: Raw APRS packet string or None if conversion failed or not a location message.
         """
         try:
             if data.get('_type') == 'location':
@@ -191,6 +227,13 @@ def main():
     def _deg_to_dms(deg, long_flag):
         """
         Convert decimal degrees to APRS Degrees Minutes Seconds (DMS) format.
+
+        Args:
+            deg (float): Decimal degrees.
+            long_flag (int): 0 for latitude, 1 for longitude.
+
+        Returns:
+            str: APRS formatted DMS string.
         """
         d = int(deg)
         md = round(abs(deg - d) * 60, 2)

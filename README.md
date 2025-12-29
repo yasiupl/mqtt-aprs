@@ -6,6 +6,34 @@ This daemon allows you to:
 1.  **Relay Owntracks locations to APRS**: Listen for MQTT messages from Owntracks and post them to the APRS network as your station's location.
 2.  **Bridge APRS traffic to MQTT**: Connect to APRS-IS, filter for specific packets (e.g., within a geographic range or specific callsigns), convert them to Owntracks JSON format, and publish them to your MQTT broker.
 
+## Architecture
+
+```mermaid
+graph LR
+    subgraph "mqtt-aprs Gateway"
+        MAIN["mqtt-aprs.py<br/>(Main Logic / Coordinator)"]
+        MC["MQTTClient<br/>(MQTT Interface)"]
+        AC["APRSClient<br/>(APRS-IS Interface)"]
+        
+        MAIN <--> MC
+        MAIN <--> AC
+    end
+
+    subgraph "MQTT Domain"
+        OT[Owntracks Clients] -- JSON --> MQTT[MQTT Broker]
+    end
+
+    MQTT -- "owntracks/#" --> MC
+    MC -- "owntracks/aprs/..." --> MQTT
+
+    subgraph "APRS Domain"
+        APRS[APRS-IS Network]
+    end
+
+    AC -- "APRS Packets" --> APRS
+    APRS -- "Filtered Packets" --> AC
+```
+
 ## Features
 
 *   **Python 3**: Modernized codebase using `paho-mqtt` and `aprslib`.
