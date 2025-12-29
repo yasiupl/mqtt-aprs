@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+MQTT-APRS Gateway
+
+This application acts as a bi-directional gateway between the APRS-IS network and an MQTT broker.
+It relays location updates from APRS to Owntracks-compatible MQTT topics and vice-versa.
+"""
 
 import os
 import sys
@@ -21,6 +27,15 @@ APPNAME = "mqtt-aprs"
 CONFIG = {}
 
 def load_config(path="/etc/mqtt-aprs/mqtt-aprs.cfg"):
+    """
+    Load configuration from the specified CFG file.
+
+    Populates the global CONFIG dictionary.
+
+    Args:
+        path (str): Path to the configuration file. Defaults to /etc/mqtt-aprs/mqtt-aprs.cfg.
+                    Falls back to local 'mqtt-aprs.cfg' if the default path doesn't exist.
+    """
     config = configparser.ConfigParser()
     if not os.path.exists(path):
         # Fallback for development if file is local
@@ -33,6 +48,7 @@ def load_config(path="/etc/mqtt-aprs/mqtt-aprs.cfg"):
     config.read(path)
 
     def get(section, option, default=None, is_bool=False, is_int=False):
+        """Helper to safely get config values with type conversion."""
         try:
             if is_bool: return config.getboolean(section, option)
             if is_int: return config.getint(section, option)
@@ -40,9 +56,11 @@ def load_config(path="/etc/mqtt-aprs/mqtt-aprs.cfg"):
         except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
             return default
 
+    # Global settings
     CONFIG["DEBUG"] = get("global", "DEBUG", default=False, is_bool=True)
     CONFIG["LOGFILE"] = get("global", "LOGFILE")
     
+    # MQTT settings
     CONFIG["MQTT_HOST"] = get("mqtt", "HOST", default="localhost")
     CONFIG["MQTT_PORT"] = get("mqtt", "PORT", default=1883, is_int=True)
     CONFIG["MQTT_USER"] = get("mqtt", "USER")
@@ -50,6 +68,7 @@ def load_config(path="/etc/mqtt-aprs/mqtt-aprs.cfg"):
     CONFIG["MQTT_OUT_ENABLED"] = get("mqtt_outgoing", "ENABLED", default=True, is_bool=True)
     CONFIG["MQTT_TOPIC"] = get("mqtt_outgoing", "TOPIC", default="owntracks/+/+")
     
+    # APRS settings
     CONFIG["APRS_SERVER"] = get("aprs", "SERVER", default="rotate.aprs2.net")
     CONFIG["APRS_PORT"] = get("aprs", "PORT", default=14580, is_int=True)
     CONFIG["APRS_CALLSIGN"] = get("aprs", "CALLSIGN", default="N0CALL")
@@ -58,11 +77,15 @@ def load_config(path="/etc/mqtt-aprs/mqtt-aprs.cfg"):
     CONFIG["APRS_SYMB"] = get("aprs", "SYMBOL", default="[")
     CONFIG["APRS_TABL"] = get("aprs", "TABLE", default="/")
     
+    # APRS Incoming settings
     CONFIG["APRS_IN_ENABLED"] = get("aprs_incoming", "ENABLED", default=False, is_bool=True)
     CONFIG["APRS_IN_FILTER"] = get("aprs_incoming", "FILTER")
     CONFIG["APRS_IN_TOPIC_PREFIX"] = get("aprs_incoming", "TOPIC_PREFIX", default="owntracks/aprs")
 
 def setup_logging():
+    """
+    Configure the logging system based on the loaded configuration.
+    """
     log_format = "%(asctime)-15s %(message)s"
     level = logging.DEBUG if CONFIG.get("DEBUG") else logging.INFO
     
@@ -75,18 +98,16 @@ def setup_logging():
     logging.info(f"Debug mode: {CONFIG.get('DEBUG')}")
 
 def main():
+    """
+    Main application entry point.
+    
+    Initializes configuration, logging, and starts the MQTT and APRS clients.
+    """
     setproctitle.setproctitle(APPNAME)
     load_config()
     setup_logging()
 
     # --- Initialization ---
-    
-    # We need a way to pass callbacks between the two clients
-    # MQTT Client needs to send packets to APRS
-    # APRS Client needs to publish messages to MQTT
-    
-    # Deferred initialization pattern or wrapper needed?
-    # Simple approach: Create instances, then wire them up or pass wrappers.
     
     # Wrapper for APRS Client to send packet (passed to MQTT Client)
     def send_aprs_packet(packet):

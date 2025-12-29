@@ -6,7 +6,23 @@ import threading
 import aprslib
 
 class APRSClient:
+    """
+    A client for handling interactions with the APRS-IS network.
+    
+    This class manages the connection to an APRS-IS server, listens for incoming
+    packets based on a filter, and sends outgoing packets. It also converts
+    received APRS packets into Owntracks-compatible JSON payloads for MQTT publishing.
+    """
+
     def __init__(self, config, mqtt_publisher_callback):
+        """
+        Initialize the APRSClient.
+
+        Args:
+            config (dict): Application configuration dictionary containing APRS settings.
+            mqtt_publisher_callback (callable): Callback function to publish messages to MQTT. 
+                                                Signature: (topic, payload)
+        """
         self.config = config
         self.mqtt_publish = mqtt_publisher_callback
         self._stop_event = threading.Event()
@@ -25,7 +41,9 @@ class APRSClient:
 
     def start_listener(self):
         """
-        Start the background thread to listen to APRS-IS
+        Start the background thread to listen to APRS-IS for incoming traffic.
+        
+        If APRS_IN_ENABLED is false in the config, the listener is not started.
         """
         if not self.config['APRS_IN_ENABLED']:
             logging.info("APRS Incoming Listener is disabled.")
@@ -39,6 +57,12 @@ class APRSClient:
         t.start()
 
     def _listener_loop(self):
+        """
+        Main loop for the APRS listener thread.
+        
+        Maintains connection to APRS-IS and processes incoming packets.
+        Auto-reconnects on failure.
+        """
         while not self._stop_event.is_set():
             try:
                 logging.info("Connecting to APRS-IS for incoming traffic...")
@@ -48,7 +72,7 @@ class APRSClient:
                 
                 self.aprs_is.connect()
                 
-                # Blocking call
+                # Blocking call - consumes packets indefinitely
                 self.aprs_is.consumer(self._handle_packet, raw=False)
                 
             except Exception as e:
@@ -56,6 +80,15 @@ class APRSClient:
                 time.sleep(10) # Wait before reconnecting
 
     def _handle_packet(self, packet):
+        """
+        Callback handler for received APRS packets.
+
+        Filters for location packets, converts them to Owntracks format,
+        and publishes them via the MQTT callback.
+
+        Args:
+            packet (dict): Parsed APRS packet data.
+        """
         # We only care about location packets
         if 'latitude' in packet and 'longitude' in packet:
             logging.debug(f"Received APRS packet from {packet.get('from')}")
@@ -72,7 +105,13 @@ class APRSClient:
 
     def _aprs_to_owntracks(self, packet):
         """
-        Convert parsed APRS packet to Owntracks JSON format
+        Convert a parsed APRS packet to Owntracks JSON format.
+
+        Args:
+            packet (dict): Parsed APRS packet.
+
+        Returns:
+            dict: Owntracks-compatible dictionary, or None if conversion fails.
         """
         try:
             # Basic Owntracks payload
@@ -101,7 +140,13 @@ class APRSClient:
 
     def send_packet(self, packet):
         """
-        Send packet using the global aprslib instance
+        Send a raw APRS packet using the global aprslib instance.
+
+        If the listener is running, it reuses the existing connection.
+        Otherwise, it establishes a temporary connection for sending.
+
+        Args:
+            packet (str): Raw APRS packet string.
         """
         logging.debug(f"Sending packet via aprslib: {packet.strip()}")
         try:
